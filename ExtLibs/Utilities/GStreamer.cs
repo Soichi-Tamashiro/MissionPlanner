@@ -1,31 +1,30 @@
-﻿using System;
+﻿using log4net;
+using SkiaSharp;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
-using System.Text;
-using System.Net.Sockets;
 using System.Drawing;
+using System.Drawing.Imaging;
 using System.IO;
 using System.IO.Compression;
 using System.IO.Pipes;
+using System.Linq;
 using System.Net;
+using System.Net.Sockets;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
-using log4net;
-using LibVLC.NET;
-using MissionPlanner.Utilities.Drawing;
-using guint = System.UInt32;
-using GstClockTime = System.UInt64;
 using gsize = System.UInt64;
-using SkiaSharp;
+using GstClockTime = System.UInt64;
+using guint = System.UInt32;
 
 namespace MissionPlanner.Utilities
 {
     public class GStreamer
     {
         private static readonly ILog log =
-            LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+            LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
 
         private static List<Process> processList = new List<Process>();
 
@@ -354,11 +353,19 @@ namespace MissionPlanner.Utilities
 
             try
             {
+                //https://github.com/GStreamer/gstreamer/blob/master/tools/gst-launch.c#L1125
                 NativeMethods.gst_init(ref argc, argv);
+            }
+            catch (DllNotFoundException ex)
+            {
+                CustomMessageBox.Show("The file was not found at " + gstlaunch +
+                                      "\nPlease verify permissions " + ex.ToString());
+                return null;
             }
             catch (BadImageFormatException)
             {
-                CustomMessageBox.Show("The incorrect exe architecture has been detected at " + gstlaunch + "\nPlease install gstreamer for the correct architecture");
+                CustomMessageBox.Show("The incorrect exe architecture has been detected at " + gstlaunch +
+                                      "\nPlease install gstreamer for the correct architecture");
                 return null;
             }
 
@@ -438,7 +445,9 @@ namespace MissionPlanner.Utilities
 
                 Thread.Sleep(500);
 
-                while (!NativeMethods.gst_app_sink_is_eos(appsink))
+                run = true;
+
+                while (run && !NativeMethods.gst_app_sink_is_eos(appsink))
                 {
                     try
                     {
@@ -465,9 +474,8 @@ namespace MissionPlanner.Utilities
                                         SkiaSharp.SKColorType.Bgra8888, info.data);
 
                                     _onNewImage?.Invoke(null, image);
-
-                                    NativeMethods.gst_buffer_unmap(buffer, out info);
-                                }
+                                } 
+                                NativeMethods.gst_buffer_unmap(buffer, out info);
                             }
 
                             NativeMethods.gst_sample_unref(sample);
@@ -489,13 +497,11 @@ namespace MissionPlanner.Utilities
                     }
                 }
 
-
+                NativeMethods.gst_element_set_state(pipeline, GstState.GST_STATE_NULL);
+                NativeMethods.gst_buffer_unref(bus);
 
                 // cleanup
                 _onNewImage?.Invoke(null, null);
-
-                NativeMethods.gst_element_set_state(pipeline, GstState.GST_STATE_NULL);
-                NativeMethods.gst_buffer_unref(bus);
 
                 log.Info("Gstreamer Exit");
 
@@ -537,8 +543,12 @@ namespace MissionPlanner.Utilities
             // Prepend native path to environment path, to ensure the
             // right libs are being used.
             var path = Environment.GetEnvironmentVariable("PATH");
-            path = Path.Combine(gstdir, "bin") + ";" + Path.Combine(gstdir, "lib") + ";" + path;
-            Environment.SetEnvironmentVariable("PATH", path);
+            if (!path.Contains(gstdir))
+            {
+                path = Path.Combine(gstdir, "bin") + ";" + Path.Combine(gstdir, "lib") + ";" + path;
+
+                Environment.SetEnvironmentVariable("PATH", path);
+            }
 
             Environment.SetEnvironmentVariable("GSTREAMER_ROOT", gstdir);
 
@@ -574,9 +584,11 @@ namespace MissionPlanner.Utilities
         {
             List<string> dirs = new List<string>();
 
+            dirs.Add("/usr/lib/x86_64-linux-gnu");
+
             dirs.Add(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location));
 
-            dirs.Add(Settings.GetDataDirectory());
+            dirs.Add(Settings.GetDataDirectory());                    
             
             DriveInfo[] allDrives = DriveInfo.GetDrives();
             foreach (DriveInfo d in allDrives)
@@ -585,15 +597,20 @@ namespace MissionPlanner.Utilities
                 {
                     dirs.Add(d.RootDirectory.Name + "gstreamer");
                     dirs.Add(d.RootDirectory.Name + "Program Files" + Path.DirectorySeparatorChar + "gstreamer");
-                    dirs.Add(d.RootDirectory.Name + "Program Files (x86)" + Path.DirectorySeparatorChar + "gstreamer");
+                    dirs.Add(d.RootDirectory.Name + "Program Files (x86)" + Path.DirectorySeparatorChar + "gstreamer");                    
                 }
             }
-            
+
+            var is64bit = Environment.Is64BitProcess;
+
             foreach (var dir in dirs)
             {
                 if (Directory.Exists(dir))
                 {
-                    var ans = Directory.GetFiles(dir, "libgstreamer-1.0-0.dll", SearchOption.AllDirectories);
+                    var ans = Directory.GetFiles(dir, "*.*", SearchOption.AllDirectories).Where(a => a.ToLower().Contains("libgstreamer-1.0-0.dll") || a.ToLower().Contains("libgstreamer-1.0.so.0")).ToArray();
+
+                    ans = ans.Where(a =>
+                        (!is64bit && !a.ToLower().Contains("_64")) || is64bit && a.ToLower().Contains("_64")).ToArray();
 
                     if (ans.Length > 0)
                     {
@@ -987,7 +1004,7 @@ namespace MissionPlanner.Utilities
 
                                     IntPtr ptr = bmpData.Scan0;
 
-                                    Marshal.Copy(ms.ToArray(), 0, ptr, (int) img.Width * img.Height * 4);
+                                    Marshal.Copy(ms.GetBuffer(), 0, ptr, (int) img.Width * img.Height * 4);
 
                                     img.UnlockBits(bmpData);
                                 }
@@ -1153,8 +1170,11 @@ namespace MissionPlanner.Utilities
             run = null;
         }
 
+        private static bool run = true;
         public static void StopAll()
         {
+            run = false;
+            Thread.Sleep(50);
             foreach (var process in processList)
             {
                 Stop(process);
@@ -1163,15 +1183,26 @@ namespace MissionPlanner.Utilities
 
         public static void DownloadGStreamer(Action<int, string> status = null)
         {
-            var output = Settings.GetDataDirectory() + "gstreamer-1.0-x86_64-1.12.4.zip";
+            string output = "";
+            string url = "";
+
+            if (System.Environment.Is64BitProcess)
+            {
+                output = Settings.GetDataDirectory() + "gstreamer-1.0-x86_64-1.12.4.zip";
+                url = "https://firmware.ardupilot.org/MissionPlanner/gstreamer/gstreamer-1.0-x86_64-1.12.4.zip";
+            }
+            else
+            {
+                output = Settings.GetDataDirectory() + "gstreamer-1.0-x86-1.9.2.zip";
+                url = "https://firmware.ardupilot.org/MissionPlanner/gstreamer/gstreamer-1.0-x86-1.9.2.zip";
+            }
+
 
             status?.Invoke(0, "Downloading..");
 
             try
             {
-                Download.ParallelDownloadFile(
-                    "http://firmware.ardupilot.org/MissionPlanner/gstreamer/gstreamer-1.0-x86_64-1.12.4.zip",
-                    output, status: status);
+                Download.getFilefromNet(url, output, status: status);
 
                 status?.Invoke(50, "Extracting..");
                 ZipFile.ExtractToDirectory(output, Settings.GetDataDirectory());

@@ -21,14 +21,6 @@ namespace MissionPlanner.Maps
         public PointLatLngAlt center = PointLatLngAlt.Zero;
         private float clearance;
 
-        //Releif Shading Parameters
-        private readonly byte[] colors = {220, 226, 232, 233, 244, 250, 214, 142, 106}; //Colors: Red - Yellow - Green
-
-        private readonly byte[] colors2 =
-        {
-            195, 189, 123, 80, 81, 45, 51, 57, 105, 111, 75, 74, 70, 72, 106, 108, 142, 178, 214, 215, 250, 244, 239,
-            238, 233, 232, 226, 220
-        }; //Colors: Blue - Green - Yellow - Red
 
         public GMapOverlay distance;
         private readonly Thread elevation; //Map Overlay Thread
@@ -131,7 +123,7 @@ namespace MissionPlanner.Maps
 
             if (connected && home_kmleft)
             {
-                GMapMarkerDistance home_kmleft_marker = new GMapMarkerDistance(HomeLocation, battery_kmleft, Settings.Instance.GetFloat("Propagation_Tolerance"));
+                GMapMarkerDistance home_kmleft_marker = new GMapMarkerDistance(HomeLocation, battery_kmleft * 1000.0, Settings.Instance.GetFloat("Propagation_Tolerance"));
                 home_kmleft_marker.Pen = new Pen(Brushes.Red, 1);
                 home_kmleft_marker.Pen2 = new Pen(Brushes.Orange, 1);
                 distance.Markers.Add(home_kmleft_marker);
@@ -139,7 +131,7 @@ namespace MissionPlanner.Maps
 
             if (connected && drone_kmleft)
             {
-                GMapMarkerDistance drone_kmleft_marker = new GMapMarkerDistance(Location, battery_kmleft, Settings.Instance.GetFloat("Propagation_Tolerance"));
+                GMapMarkerDistance drone_kmleft_marker = new GMapMarkerDistance(Location, battery_kmleft * 1000.0, Settings.Instance.GetFloat("Propagation_Tolerance"));
                 drone_kmleft_marker.Pen = new Pen(Brushes.Red, 1);
                 drone_kmleft_marker.Pen2 = new Pen(Brushes.Orange, 1);
                 distance.Markers.Add(drone_kmleft_marker);
@@ -203,14 +195,23 @@ namespace MissionPlanner.Maps
                                     height + extend / 2);
                                 imageDataRect = RectLatLng.FromLTRB(tl.Lng, tl.Lat, rb.Lng, rb.Lat);
 
+                                CancellationTokenSource cts = new CancellationTokenSource();
+                                ParallelOptions po = new ParallelOptions();
+                                po.CancellationToken = cts.Token;
+
                                 Parallel.ForEach(
-                                    Extensions.SteppedRange(res / 2, height + extend + 1 - res, res), y =>
+                                    Extensions.SteppedRange(res / 2, height + extend + 1 - res, res), po, y =>
                                     {
+                                        if (zoom != gMapControl1.Zoom || center != gMapControl1.Position)
+                                        {
+                                            center = gMapControl1.Position;
+                                            cts.Cancel();
+                                        }
+
+                                        if (cts.IsCancellationRequested) return;
                                         for (var x = res / 2; x < width + extend - res; x += res)
                                         {
-                                            // dont process if changed
-                                            if (zoom != gMapControl1.Zoom || area != gMapControl1.ViewArea)
-                                                return;
+                                            if (cts.IsCancellationRequested) return;
                                             var lnglat = gMapControl1.FromLocalToLatLng(x - extend / 2, y - extend / 2);
                                             var altresponce = srtm.getAltitude(lnglat.Lat, lnglat.Lng, zoom);
                                             if (altresponce != srtm.altresponce.Invalid &&
@@ -255,15 +256,7 @@ namespace MissionPlanner.Maps
 
                                             var normvalue = normalize(rel);
 
-                                            /*
-                                            //diagonal pattern
-                                            for (int i = -res / 2; i <= res / 2; i++)
-                                            {
-                                                imageData[x + i, y + i] = Gradient_byte(normvalue,colors);
-                                            }
-                                            */
-
-                                            var gradcolor = Gradient_byte(normvalue, colors);
+                                            var gradcolor = (byte)(((1-normvalue) * 254));
 
                                             if (alts[x, y] < -999)
                                                 gradcolor = 0;
@@ -276,15 +269,9 @@ namespace MissionPlanner.Maps
                                         else if (ter_run)
                                         {
                                             var normvalue = normalize(alts[x, y]);
-                                            /*
-                                            //diagonal pattern
-                                            for (int i = -res / 2; i <= res / 2; i++)
-                                            {
-                                                imageData[x + i, y + i] = Gradient_byte(normvalue,colors2);
-                                            }
-                                            */
 
-                                            var gradcolor = Gradient_byte(normvalue, colors2);
+
+                                            var gradcolor = (byte)(normvalue * 255);
 
                                             if (alts[x, y] < -999)
                                                 gradcolor = 0;
@@ -306,11 +293,19 @@ namespace MissionPlanner.Maps
                             if (!ele_enabled)
                                 return;
 
-                            gMapControl1.Invoke((Action) delegate
+                            try
                             {
-                                elevationoverlay.Markers.Add(gMapMarkerElevation);
-                                if (elevationoverlay.Markers.Count > 1) elevationoverlay.Markers.RemoveAt(0);
-                            });
+                                gMapControl1.Invoke((Action) delegate
+                                {
+                                    elevationoverlay.Markers.Add(gMapMarkerElevation);
+                                    if (elevationoverlay.Markers.Count > 1) elevationoverlay.Markers.RemoveAt(0);
+                                });
+
+                            }
+                            catch (InvalidOperationException)
+                            {
+
+                            }
 
                             prev_position = center;
                             prev_alt = alt;

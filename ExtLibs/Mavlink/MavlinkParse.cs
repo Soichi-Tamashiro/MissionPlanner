@@ -159,6 +159,7 @@ public partial class MAVLink
 
             if (readcount >= MAVLink.MAVLINK_MAX_PACKET_LEN)
             {
+                return null;
                 throw new InvalidDataException("No header found in data");
             }
 
@@ -357,7 +358,7 @@ public partial class MAVLink
                     ms.Write(packet, 0, i);
                     ms.Write(sig, 0, sig.Length);
 
-                    var ctx = signit.ComputeHash(ms.ToArray());
+                    var ctx = signit.ComputeHash(ms.GetBuffer());
                     // trim to 48
                     Array.Resize(ref ctx, 6);
 

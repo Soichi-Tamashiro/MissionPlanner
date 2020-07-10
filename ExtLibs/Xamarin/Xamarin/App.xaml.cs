@@ -1,6 +1,4 @@
-﻿using Autofac;
-using Autofac.Core;
-using log4net;
+﻿using log4net;
 using MissionPlanner;
 using MissionPlanner.Comms;
 using MissionPlanner.Utilities;
@@ -8,36 +6,71 @@ using System;
 using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
-using System.Resources;
 using System.Threading;
 using System.Threading.Tasks;
+using Acr.UserDialogs;
+using log4net.Appender;
+using log4net.Core;
+using log4net.Layout;
+using log4net.Repository.Hierarchy;
+using NLog;
 using Xamarin.Forms;
 using Xamarin.Forms.Internals;
 using Xamarin.Forms.Xaml;
+using Device = Xamarin.Forms.Device;
+using LogManager = log4net.LogManager;
 
 
 [assembly: XamlCompilation(XamlCompilationOptions.Compile)]
 namespace Xamarin
 {
-   
+
     public partial class App : Application
     {
         private static readonly ILog log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
 
-        private static UdpClient client;
-
-        private static Timer timer;
         private Thread httpthread;
-
-        public static ContainerBuilder builder = new ContainerBuilder();
-
-        private static IContainer Container { get; set; }
 
         public App()
         {
             InitializeComponent();
 
+            AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
+
+            log4net.Repository.Hierarchy.Hierarchy hierarchy =
+                (Hierarchy)log4net.LogManager.GetRepository(Assembly.GetAssembly(typeof(App)));
+
+            PatternLayout patternLayout = new PatternLayout();
+            patternLayout.ConversionPattern = "[%thread] %-5level %logger - %message";
+            patternLayout.ActivateOptions();
+
+            var cca = new ConsoleAppender();
+            cca.Layout = patternLayout;
+            cca.ActivateOptions();
+            hierarchy.Root.AddAppender(cca);
+
+            hierarchy.Root.Level = Level.Debug;
+            hierarchy.Configured = true;
+
+            {
+                var config = new NLog.Config.LoggingConfiguration();
+
+                // Targets where to log to: File and Console
+                var logconsole = new NLog.Targets.ConsoleTarget("logconsole");
+
+                // Rules for mapping loggers to targets            
+               // config.AddRule(LogLevel.Warn, LogLevel.Fatal, logconsole);
+
+                // Apply config           
+                NLog.LogManager.Configuration = config;
+            }
+
             MainPage = new MainPage();
+        }
+
+        private void CurrentDomain_UnhandledException(object sender, UnhandledExceptionEventArgs e)
+        {
+            Log.Warning("Xamarin", e.ExceptionObject.ToString());
         }
 
         protected override void OnStart()
@@ -48,7 +81,20 @@ namespace Xamarin
             {
                 try
                 {
-                    client = new UdpClient(14551, AddressFamily.InterNetwork);
+                    var client = new UdpClient(14551, AddressFamily.InterNetwork);
+                    client.BeginReceive(clientdata, client);
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning("", ex.ToString());
+                }
+            });
+
+            Task.Run(async () =>
+            {
+                try
+                {
+                    var client = new UdpClient(14550, AddressFamily.InterNetwork);
                     client.BeginReceive(clientdata, client);
                 }
                 catch (Exception ex)
@@ -77,10 +123,9 @@ namespace Xamarin
             CustomMessageBox.ShowEvent += CustomMessageBox_ShowEvent;
             MAVLinkInterface.CreateIProgressReporterDialogue += CreateIProgressReporterDialogue;
 
-            Container = builder.Build();
+            Task.Run(() => { MainV2.instance.SerialReader(); });
 
-            var scope = Container.BeginLifetimeScope();
-            
+            var mp = MainPage;
         }
 
         private CustomMessageBox.DialogResult CustomMessageBox_ShowEvent(string text, string caption = "",
@@ -88,12 +133,30 @@ namespace Xamarin
             CustomMessageBox.MessageBoxIcon icon = CustomMessageBox.MessageBoxIcon.None, string YesText = "Yes",
             string NoText = "No")
         {
-            var ans = MainPage.DisplayAlert(caption, text, "OK", "Cancel");
-            ans.Wait();
-            if(ans.Result)
+            var ans = ShowMessageBoxAsync(text, caption);
+
+            //if (ans)
                 return CustomMessageBox.DialogResult.OK;
 
-            return CustomMessageBox.DialogResult.Cancel;
+            //return CustomMessageBox.DialogResult.Cancel;
+        }
+
+        public Task<bool> ShowMessageBoxAsync(string message, string caption)
+        {
+            var tcs = new TaskCompletionSource<bool>();
+            Device.BeginInvokeOnMainThread(async () =>
+            {
+                try
+                {
+                    var result = await MainPage.DisplayAlert(message, caption,"OK","Cancel");
+                    tcs.TrySetResult(result);
+                }
+                catch (Exception ex)
+                {
+                    tcs.TrySetException(ex);
+                }
+            });
+            return tcs.Task;
         }
 
         private IProgressReporterDialogue CreateIProgressReporterDialogue(string title)
@@ -104,17 +167,18 @@ namespace Xamarin
         protected override void OnSleep()
         {
             // Handle when your app sleeps
+            Log.Warning("", "OnSleep");
         }
 
         protected override void OnResume()
         {
             // Handle when your app resumes
+            Log.Warning("", "OnResume");
         }
 
 
         private void clientdata(IAsyncResult ar)
         {
-            timer = null;
             var client = ((UdpClient)ar.AsyncState);
 
             if (client == null || client.Client == null)
@@ -129,40 +193,13 @@ namespace Xamarin
                 mav.BaseStream = udpclient;
 
                 MainV2.comPort = mav;
+                MainV2.Comports.Add(mav);
 
-                //MainV2.instance.doConnect(mav, "preset", port.ToString());
-                Log.Warning("", "mav init " + mav.ToString());
-                var hb = mav.getHeartBeat();
-                Log.Warning("", "getHeartBeat " + hb.ToString());
-                mav.setAPType(mav.MAV.sysid, mav.MAV.compid);
-                Log.Warning("", "setAPType " + mav.MAV.ToJSON());
+                mav.Open(false, true);
 
+                mav.getParamList();
+                //mav.getParamListAsync(mav.MAV.sysid, mav.MAV.compid).ConfigureAwait(false);
 
-                Forms.Device.BeginInvokeOnMainThread(() =>
-                {
-                   
-                });
-
-                Task.Run(() =>
-                {
-                    while (true)
-                    {
-                        try
-                        {
-                            while (mav.BaseStream.BytesToRead < 10)
-                                Thread.Sleep(20);
-
-                            var packet = mav.readPacket();
-
-                            mav.MAV.cs.UpdateCurrentSettings(null);
-                        }
-                        catch (Exception ex)
-                        {
-                            Log.Warning("", ex.ToString());
-                            Thread.Sleep(10);
-                        }
-                    }
-                });
             }
             catch (Exception ex)
             {

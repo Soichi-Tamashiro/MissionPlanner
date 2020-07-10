@@ -1,6 +1,6 @@
 ﻿
 #define PocketPC
-using MissionPlanner.Utilities.Drawing;
+using System.Drawing;
 
 namespace GMap.NET.WindowsForms
 {
@@ -95,8 +95,8 @@ namespace GMap.NET.WindowsForms
       /// </summary>
       public readonly ObservableCollectionThreadSafe<GMapPolygon> Polygons = new ObservableCollectionThreadSafe<GMapPolygon>();
 
-      GMapControl control;
-      public GMapControl Control
+      IControl control;
+      public IControl Control
       {
          get
          {

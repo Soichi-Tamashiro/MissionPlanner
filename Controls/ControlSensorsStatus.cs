@@ -39,7 +39,7 @@ namespace MissionPlanner.Controls
                 }
 
                 tableLayoutPanel1.Controls.Add(
-                    new Label() { Text = name.Replace("MAV_SYS_STATUS", "").Replace("_", " "), Font = new Font(Font.FontFamily, 5), Margin = new Padding(0), Padding = new Padding(0) }, 0, a);
+                    new Label() { Text = name.Replace("MAV_SYS_STATUS", "").Replace("_", " ").Trim(), Font = new Font(Font.FontFamily, 5), Margin = new Padding(0), Padding = new Padding(0) }, 0, a);
                 a++;
             }
 

@@ -1,6 +1,5 @@
 ﻿#define PocketPC
 
-using MissionPlanner.Utilities.Drawing;
 
 namespace GMap.NET.WindowsForms
 {
@@ -268,7 +267,8 @@ namespace GMap.NET.WindowsForms
          this.Position = pos;
       }
 
-      public virtual void OnRender(IGraphics g)
+
+        public virtual void OnRender(IGraphics g)
       {
          //
          g.FillPie(Brushes.Red, -5, -5, 10, 10, 0, 360);
@@ -279,10 +279,11 @@ namespace GMap.NET.WindowsForms
       {
          g.DrawImage(inBmp, new Rectangle(x, y, inBmp.Width, inBmp.Height), 0, 0, inBmp.Width, inBmp.Height, GraphicsUnit.Pixel, attr);
       }
+
 #endif
 
 #if !PocketPC
-      #region ISerializable Members
+        #region ISerializable Members
 
       /// <summary>
       /// Populates a <see cref="T:System.Runtime.Serialization.SerializationInfo"/> with the data needed to serialize the target object.
@@ -328,12 +329,12 @@ namespace GMap.NET.WindowsForms
          this.IsHitTestVisible = info.GetBoolean("IsHitTestVisible");
       }
 
-      #endregion
+        #endregion
 #endif
 
-      #region IDisposable Members
+        #region IDisposable Members
 
-      bool disposed = false;
+        bool disposed = false;
 
       public virtual void Dispose()
       {
@@ -353,7 +354,43 @@ namespace GMap.NET.WindowsForms
       }
 
       #endregion
-   }
+
+      protected void GetObjectData(SerializationInfo info, StreamingContext context)
+      {
+          info.AddValue("Position", this.Position);
+          info.AddValue("Tag", this.Tag);
+          info.AddValue("Offset", this.Offset);
+          info.AddValue("Area", this.area);
+          info.AddValue("ToolTip", this.ToolTip);
+          info.AddValue("ToolTipMode", this.ToolTipMode);
+          info.AddValue("ToolTipText", this.ToolTipText);
+          info.AddValue("Visible", this.IsVisible);
+          info.AddValue("DisableregionCheck", this.DisableRegionCheck);
+          info.AddValue("IsHitTestVisible", this.IsHitTestVisible);
+        }
+
+      /// <summary>
+      /// Initializes a new instance of the <see cref="GMapMarker"/> class.
+      /// </summary>
+      /// <param name="info">The info.</param>
+      /// <param name="context">The context.</param>
+      protected GMapMarker(SerializationInfo info, StreamingContext context)
+      {
+          this.Position = Extensions.GetStruct<PointLatLng>(info, "Position", PointLatLng.Empty);
+          this.Tag = Extensions.GetValue<object>(info, "Tag", null);
+          this.Offset = Extensions.GetStruct<Point>(info, "Offset", Point.Empty);
+          this.area = Extensions.GetStruct<Rectangle>(info, "Area", Rectangle.Empty);
+
+          this.ToolTip = Extensions.GetValue<GMapToolTip>(info, "ToolTip", null);
+          if (this.ToolTip != null) this.ToolTip.Marker = this;
+
+          this.ToolTipMode = Extensions.GetStruct<MarkerTooltipMode>(info, "ToolTipMode", MarkerTooltipMode.OnMouseOver);
+          this.ToolTipText = info.GetString("ToolTipText");
+          this.IsVisible = info.GetBoolean("Visible");
+          this.DisableRegionCheck = info.GetBoolean("DisableregionCheck");
+          this.IsHitTestVisible = info.GetBoolean("IsHitTestVisible");
+      }
+    }
 
    public delegate void MarkerClick(GMapMarker item, /*MouseEventArgs*/ object mouseEventArgs);
    public delegate void MarkerEnter(GMapMarker item);

@@ -6,7 +6,6 @@ using System.Text;
 using GMap.NET;
 using GMap.NET.WindowsForms;
 using MissionPlanner.Utilities;
-using SvgNet.SvgGdi;
 
 namespace MissionPlanner.Maps
 {
@@ -29,7 +28,7 @@ namespace MissionPlanner.Maps
         public double Pitch { get; internal set; }
         public double Yaw { get; internal set; }
 
-        public bool drawfootprint = true;
+        public bool drawfootprint = false;
 
         MAVLink.mavlink_camera_feedback_t local;
 

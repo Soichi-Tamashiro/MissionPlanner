@@ -2,7 +2,6 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Drawing;
-using System.Drawing.Imaging;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -18,7 +17,6 @@ using ExifLibrary;
 using log4net;
 using MissionPlanner.Comms;
 using MissionPlanner.Utilities;
-using MissionPlanner.Utilities.Drawing;
 using SharpKml.Base;
 using SharpKml.Dom;
 
@@ -192,7 +190,7 @@ namespace MissionPlanner.GeoRef
             // DataFlash Log
             else
             {
-                using (var sr = new CollectionBuffer(File.OpenRead(fn)))
+                using (var sr = new DFLogBuffer(File.OpenRead(fn)))
                 {
                     // Will hold the last seen Attitude information in order to incorporate them into the GPS Info
                     float currentYaw = 0f;
@@ -350,7 +348,7 @@ namespace MissionPlanner.GeoRef
             else
             {
                 float currentSAlt = 0;
-                using (var sr = new CollectionBuffer(File.OpenRead(fn)))
+                using (var sr = new DFLogBuffer(File.OpenRead(fn)))
                 {
                     //FMT, 146, 43, CAM, QIHLLeeeccC, TimeUS,GPSTime,GPSWeek,Lat,Lng,Alt,RelAlt,GPSAlt,Roll,Pitch,Yaw
                     //FMT, 198, 17, RFND, QCBCB, TimeUS,Dist1,Orient1,Dist2,Orient2
@@ -412,7 +410,7 @@ namespace MissionPlanner.GeoRef
             Dictionary<long, VehicleLocation> list = new Dictionary<long, VehicleLocation>();
 
             float currentSAlt = 0;
-            using (var sr = new CollectionBuffer(File.OpenRead(fn)))
+            using (var sr = new DFLogBuffer(File.OpenRead(fn)))
             {
                 foreach (var item in sr.GetEnumeratorType(new string[] { "TRIG", "RFND" }))
                 {
